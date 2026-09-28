@@ -21,13 +21,13 @@ donnees, et ne jamais melanger deux versions dans une meme analyse.
 CALIB_VERSION = "v2.0-2026-09-focale-verifiee"
 
 # --- Chemins (a adapter) ---------------------------------------------------
-IMG_DIR = r"C:\donnees\visia"
-OUT_DIR = r"C:\donnees\visia\resultats"
+IMG_DIR = r"C:\Users\tristan_cotte\PycharmProjects\VISIA_3D_Reconstruction\visia3d\dataset"
+OUT_DIR = r"C:\Users\tristan_cotte\PycharmProjects\VISIA_3D_Reconstruction\visia3d\results"
 
 # --- Convention de nommage -------------------------------------------------
 # <sujet>_<session>_<angle>_<modalite>.jpg
-ANGLES = {"F": "Frontal", "L": "Left_Oblique", "R": "Right_Oblique"}
-MODALITY_GEOM = "Standard_1"       # meilleure modalite geometrique (cf. etude)
+ANGLES = {"F": "Frontal", "L": "Left Oblique", "R": "Right Oblique"}
+MODALITY_GEOM = "Standard 1"       # meilleure modalite geometrique (cf. etude)
 MODALITY_COLOR = "Cross-Polarized" # reference colorimetrique
 
 # --- Resolution de travail -------------------------------------------------
@@ -71,7 +71,7 @@ RANSAC_E_THRESH = 2.0
 EPI_HIGH = 1.0          # residu epipolaire (px) : seuil "mesure"
 EPI_MED = 3.0           # seuil "faiblement contraint"
 TEXTURE_MIN = 5.0       # contraste local minimal
-SKIN_TOP, SKIN_BOTTOM = 0.28, 0.88
+SKIN_TOP, SKIN_BOTTOM = 0.2, 0.88
 
 # --- Comparaison D0/Dx -----------------------------------------------------
 # Le recalage est estime sur la ZONE STABLE, jamais sur la ROI mesuree.

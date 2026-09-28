@@ -49,6 +49,7 @@ moins de 5 %.
 pip install opencv-python numpy scipy
 pip install torch kornia                              # appariement appris (recommandé)
 pip install git+https://github.com/Parskatt/RoMa.git  # optionnel, densification
+pip install romav2                                    # RoMa v2, machine GPU uniquement
 ```
 
 Sans `kornia`, le pipeline bascule automatiquement sur ASIFT **et le signale
@@ -70,6 +71,7 @@ Reconstruction d'une session et comparaison entre deux sessions.
 | `fuse_modalities.py` | **fusion des quatre modalités** d'éclairage |
 | `outlier_filter.py` | **rejet des points aberrants** (4 critères) |
 | `visia_core.py` | E/S, appariement, densification, géométrie |
+| `roma_field.py` | **relecture du champ RoMa v2** exporté depuis la machine GPU |
 | `visia_compare.py` | recalage, métriques adimensionnelles, test à blanc |
 | `run_calibrate.py` | estime et **gèle** la géométrie du banc (une fois pour l'étude) |
 | `run_session.py` | reconstruit une session |
@@ -164,7 +166,13 @@ connue, cette seule mesure suffit.
 | Script | Objet |
 |---|---|
 | `tiled_matching.py` | DISK + LightGlue par tuiles (recommandé) |
-| `roma_matching.py` | RoMa, modes `sample` et `grid` |
+| `roma_matching.py` | RoMa v1, modes `sample` et `grid` |
+| `roma_v2_simple.py` | **RoMa v2 sans tuilage** : un `match()` par paire, à essayer en premier |
+| `roma_v2_export.py` | RoMa v2 par tuiles guidées → résolution native |
+| `roma_v2_compare.py` | RoMa v2 contre la densification actuelle, à armes égales |
+
+Voir **`03_appariement/README_ROMA_V2.md`** pour la chaîne complète
+export → téléchargement → intégration.
 
 **Progression mesurée** (appariements sur la peau, F↔L / F↔R) :
 
@@ -193,6 +201,41 @@ restaure le chaînage mais le filtrage épipolaire rejette 93 % des pistes : la
 précision de localisation d'un champ dense reste inférieure à celle d'un
 détecteur de points.
 
+### RoMa v2 sur machine GPU distante
+
+Le champ dense est calculé sur une machine à GPU (H100), exporté en **un
+fichier par session** et relu par le pipeline à la place de l'étape de
+densification. Le rig reste gelé et estimé par DISK + LightGlue ; seule la
+densification change.
+
+```bash
+# sur la machine GPU (version simple, sans tuilage)
+python 03_appariement/roma_v2_simple.py --img-dir /data/visia \
+    --subject alban --session D0
+# puis, après téléchargement, sur le poste de travail
+python 00_pipeline/run_session.py alban D0 --rig rig.json --step 1 \
+    --roma roma2_alban_D0_Standard_1.npz
+```
+
+Deux apports par rapport à RoMa v1 :
+
+- le modèle prédit une **matrice de précision par pixel**, soit une incertitude
+  de localisation anisotrope et calibrée, là où le pipeline ne disposait que
+  d'un seuil binaire sur le résidu épipolaire ;
+- le résidu épipolaire est désormais calculé avec la matrice fondamentale
+  **dérivée du rig gelé**, donc indépendante de l'appariement — plus strict que
+  la chaîne actuelle, qui ré-estime `F` sur sa propre passe grossière.
+
+Une session reconstruite ainsi porte le stamp `CALIB_VERSION + '+roma2'` et ne
+peut pas être comparée à une session reconstruite autrement.
+
+**Réserve sur le verdict de 2026.** La lecture du champ en mode `grid` se
+faisait au plus proche voisin de la grille du champ, ce qui introduit à soi
+seul une erreur médiane de 1,42 px pour un seuil `EPI_HIGH` de 1,0 px. Le
+rejet de 93 % mentionné ci-dessus est donc en partie imputable à la lecture,
+pas au moteur. La lecture est corrigée (bilinéaire) ; le verdict mérite d'être
+réexaminé, mesures à l'appui, avant d'être maintenu ou levé.
+
 ---
 
 ## `04_validation/` — validation méthodologique
@@ -205,6 +248,8 @@ détecteur de points.
 | `volume_map.py` | **carte de variation de volume** | seuil de détection 1,13 % |
 | `export_pointcloud.py` | export PLY coloré d'une session | ~780 000 points par session |
 | `benchmark.py` | **temps de calcul et mémoire** par étape | ≈ 10 min par session sur 1 cœur |
+| `test_roma_coords.py` | conventions de coordonnées RoMa v2 | sans GPU, quelques secondes |
+| `test_roma_field.py` | chaîne RoMa v2 complète sur géométrie synthétique | sans GPU, quelques secondes |
 
 ### La formulation du résultat détermine sa validité
 

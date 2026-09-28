@@ -1,0 +1,97 @@
+{
+  "calib_version": "v2.0-2026-09-focale-verifiee",
+  "focal_rel": 1.42222,
+  "k1": 0.0,
+  "note": "estime sur alban/D0 modalite Standard_1; regenere le 2026-09-22 de maniere deterministe",
+  "poses": {
+    "L": {
+      "R": [
+        [
+          0.8276985153941903,
+          -0.0018643409872922782,
+          0.561169931346055
+        ],
+        [
+          -0.0037426794347374063,
+          0.9999539014680628,
+          0.008842357686086592
+        ],
+        [
+          -0.5611605474059114,
+          -0.009419085490800429,
+          0.8276533820770714
+        ]
+      ],
+      "t": [
+        -0.956356448019589,
+        -0.014764225093519759,
+        0.29182933709403364
+      ]
+    },
+    "R": {
+      "R": [
+        [
+          0.8198414994348786,
+          -0.005460039398728451,
+          -0.5725644974796587
+        ],
+        [
+          0.0017932936599875018,
+          0.9999741145680686,
+          -0.006968090962120704
+        ],
+        [
+          0.5725877224515198,
+          0.0046859538593189394,
+          0.8198300689375876
+        ]
+      ],
+      "t": [
+        0.9738081207069821,
+        0.013651352172551623,
+        0.30341674308345346
+      ]
+    }
+  },
+  "provenance": {
+    "procedure": "DISK+LightGlue 1280px -> RANSAC(F) -> essentielle -> recoverPose -> reconciliation d'echelle par pistes 3 vues",
+    "seed": 20260922,
+    "resolution_travail_px": 2000,
+    "focale_px_travail": 2844.44,
+    "match_long_px": 1280,
+    "n_features": 6144,
+    "stats": {
+      "L": {
+        "lightglue": 2527,
+        "ransac_F": 904,
+        "inliers_E": 903,
+        "angle_deg": 34.142
+      },
+      "R": {
+        "lightglue": 2331,
+        "ransac_F": 908,
+        "inliers_E": 906,
+        "angle_deg": 34.933
+      }
+    },
+    "pistes_3_vues": 24,
+    "echelle_L_sur_R": 1.02007,
+    "ecart_3D_residuel_pct": 0.228,
+    "images_sha256": {
+      "alban_D0_Frontal_Standard_1.jpg": "9b21dea42c1a8b9faa1e992a9ea0c3da7a0e83b027bac6f3eaa9a81c96a1057e",
+      "alban_D0_Left_Oblique_Standard_1.jpg": "93aa7e3410b6ee7701eb79dc04d3bc6db911fc4501f965be3fe99b0a25291a48",
+      "alban_D0_Right_Oblique_Standard_1.jpg": "b630fe9c9f392feb4695d5be43acbb79e7c87080e7356e983d3b81aa3447fee1"
+    },
+    "versions": {
+      "torch": "2.14.0+cu130",
+      "kornia": "0.8.3",
+      "opencv": "4.13.0",
+      "numpy": "2.4.4"
+    }
+  },
+  "avertissements": [
+    "Les poses dependent de FOCAL_REL : toute nouvelle focale impose de regenerer ce fichier.",
+    "La norme de t est arbitraire (branche L normalisee a 1) : reconstruction non metrique.",
+    "A remplacer par la calibration par mire des qu'elle sera disponible."
+  ]
+}

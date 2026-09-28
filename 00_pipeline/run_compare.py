@@ -31,10 +31,24 @@ import config as C, visia_core as vc, visia_compare as cmp
 
 
 def load_session(npz):
+    """Charge une session et verifie son stamp de traitement.
+
+    Le stamp vaut CALIB_VERSION, eventuellement suivi d'un suffixe designant la
+    chaine de densification employee ('+roma2' pour le champ RoMa v2, cf.
+    roma_field.py). La base doit correspondre a la config courante ; le suffixe
+    est autorise mais devra etre IDENTIQUE entre les deux sessions comparees
+    (verifie dans main()). Changer de densification change les valeurs : deux
+    chaines differentes ne se comparent pas.
+    """
     d = np.load(npz, allow_pickle=True)
-    if str(d["calib"]) != C.CALIB_VERSION:
-        raise RuntimeError(f"{npz} : calibration {d['calib']} != {C.CALIB_VERSION}")
+    stamp = str(d["calib"])
+    if not stamp.startswith(C.CALIB_VERSION):
+        raise RuntimeError(f"{npz} : calibration {stamp} != {C.CALIB_VERSION}")
     return d
+
+
+def stamp_of(d):
+    return str(d["calib"])
 
 
 def main():
@@ -50,6 +64,12 @@ def main():
     print(C.summary())
 
     d0, dx = load_session(a.ref), load_session(a.test)
+    if stamp_of(d0) != stamp_of(dx):
+        raise RuntimeError(
+            f"chaines de traitement differentes : {a.ref} porte "
+            f"'{stamp_of(d0)}' et {a.test} porte '{stamp_of(dx)}'. "
+            f"Retraiter les deux sessions avec la meme chaine avant de comparer.")
+    print(f"chaine de traitement : {stamp_of(d0)}")
     h, w = d0["shape"]
 
     # --- appariement inter-session sur la vue frontale
