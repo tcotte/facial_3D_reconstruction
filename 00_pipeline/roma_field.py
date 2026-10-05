@@ -103,10 +103,38 @@ def epipolar_residual(F, x1, y1, x2, y2):
 class RomaField:
     """Champ RoMa v2 exporte pour une session (une modalite, une ou deux paires)."""
 
+    TYPES = [
+        (("Z", "Zall", "nch", "face"), "une FUSION multi-modalites "
+         "(sortie de fuse_modalities.py)"),
+        (("Z", "keep", "rej", "face"), "une fusion FILTREE "
+         "(sortie de outlier_filter.py)"),
+        (("pix", "X", "conf", "src"), "une SESSION reconstruite "
+         "(sortie de run_session.py)"),
+    ]
+
     def __init__(self, path):
         self.path = path
-        print(os.path.basename(self.path))
         d = np.load(path, allow_pickle=False)
+        if "meta" not in d.files:
+            quoi = None
+            for cles, nom in self.TYPES:
+                if all(c in d.files for c in cles):
+                    quoi = nom
+                    break
+            msg = [f"{os.path.basename(path)} n'est pas un champ RoMa exporte : "
+                   f"la cle 'meta' est absente."]
+            if quoi:
+                msg.append(f"Ce fichier est {quoi}.")
+            else:
+                msg.append(f"Cles presentes : {', '.join(sorted(d.files)[:10])}")
+            msg.append("Attendu ici : un fichier roma2_<sujet>_<session>_"
+                       "<modalite>.npz produit par 03_appariement/"
+                       "roma_v2_simple.py ou roma_v2_export.py.")
+            if quoi and "FUSION" in quoi.upper():
+                msg.append("Pour analyser une fusion, voir plutot "
+                           "04_validation/coverage_by_zone.py --fusion "
+                           "ou export_pointcloud.py --fusion.")
+            raise RuntimeError("\n  ".join(msg))
         self.meta = json.loads(str(d["meta"]))
         if self.meta.get("format") != EXPECTED_FORMAT:
             raise RuntimeError(
@@ -136,6 +164,12 @@ class RomaField:
         mod = modality or C.MODALITY_GEOM
         if m["modality"] != mod:
             warnings.append(f"modalite {m['modality']} != {mod}")
+        if m.get("loader") != "cv2-array":
+            warnings.append(
+                "champ exporte AVANT le correctif d'orientation (loader non "
+                "renseigne). Si le residu epipolaire est de l'ordre de la "
+                "centaine de pixels, lancer "
+                "04_validation/diagnose_field_frame.py")
         if problems:
             raise RuntimeError(f"{os.path.basename(self.path)} incompatible :\n  - "
                                + "\n  - ".join(problems))
@@ -254,6 +288,38 @@ class RomaField:
                 F, xs.astype(float), ys.astype(float),
                 obx[ys, xs].astype(float), oby[ys, xs].astype(float)).astype(np.float32)
         return obx, oby, epi, ok
+
+    def plancher(self, pair, cert_min=0.5, nmax=40000):
+        """Residu median de la MEILLEURE matrice fondamentale possible.
+
+        On re-estime F sur le champ lui-meme : aucun rig ne peut faire mieux,
+        c'est la coherence interne des correspondances. Un plancher eleve
+        signifie que le champ n'est pas explicable par UNE geometrie
+        epipolaire — scene non rigide entre les trois prises.
+
+        Sert a exprimer le seuil epipolaire RELATIVEMENT au bruit du sujet,
+        au lieu d'une constante en pixels qui n'a pas le meme sens d'un sujet
+        a l'autre : mesure sur deux sujets, 0,20 px contre 1,70 px.
+        """
+        xy = self._d[f"{pair}_xy"].astype(np.float64)
+        cert = self._d[f"{pair}_cert"].astype(np.float64)
+        m = np.isfinite(xy[:, 0]) & (cert > cert_min)
+        if m.sum() < 500:
+            return None
+        ys, xs = self.idx // self.W, self.idx % self.W
+        sel = np.nonzero(m)[0]
+        if len(sel) > nmax:
+            sel = sel[np.linspace(0, len(sel) - 1, nmax).astype(int)]
+        F, _ = cv2.findFundamentalMat(
+            np.column_stack([xs[sel], ys[sel]]).astype(np.float64),
+            xy[sel], cv2.USAC_MAGSAC, 1.0, 0.9999, 100000)
+        if F is None:
+            return None
+        F = F[:3] / (np.linalg.norm(F[:3]) + 1e-30)
+        e = epipolar_residual(F, xs[m].astype(float), ys[m].astype(float),
+                              xy[m, 0], xy[m, 1])
+        e = e[np.isfinite(e)]
+        return float(np.median(e)) if len(e) else None
 
     def sigma_map(self, pair, fill=False):
         s = self._d[f"{pair}_sigma"].astype(np.float32)

@@ -101,6 +101,34 @@ def main():
     if coupe_haut > 0.20 * peau.sum():
         print(f"   NOTE : la bande coupe le haut — front, cheveux. Souvent voulu.")
 
+    # --- le seuil de peau est-il adapte a CE sujet ? ------------------------
+    # `gray > 45` separe le visage du fond par la luminance. C'est un seuil
+    # FIXE : sur un phototype plus fonce, ou sous un eclairage plus faible, une
+    # part du visage passe dessous et sort du masque AVANT tout appariement.
+    # Une couverture qui s'effondre en changeant de sujet commence souvent ici.
+    print(f"\nsensibilite du masque au seuil de luminance (actuel : 45)")
+    ref = None
+    for seuil in (25, 35, 45, 55, 65):
+        m2 = (gA > seuil).astype(np.uint8)
+        m2 = cv2.morphologyEx(m2, cv2.MORPH_OPEN, np.ones((9, 9), np.uint8))
+        m2 = cv2.morphologyEx(m2, cv2.MORPH_CLOSE, np.ones((25, 25), np.uint8))
+        n2 = int((m2.astype(bool)[yb0:yb1]).sum())
+        if seuil == 45:
+            ref = n2
+        marque = "  <- actuel" if seuil == 45 else ""
+        print(f"   > {seuil:3d} : {n2:>10d} pixels dans la bande"
+              + (f"  ({100*n2/ref-100:+.1f} %)" if ref and seuil != 45 else "")
+              + marque)
+    m25 = (gA > 25).astype(np.uint8)
+    m25 = cv2.morphologyEx(m25, cv2.MORPH_OPEN, np.ones((9, 9), np.uint8))
+    m25 = cv2.morphologyEx(m25, cv2.MORPH_CLOSE, np.ones((25, 25), np.uint8))
+    gain = int((m25.astype(bool)[yb0:yb1]).sum()) - ref
+    if ref and gain > 0.10 * ref:
+        print(f"   ATTENTION : abaisser le seuil a 25 ajouterait {100*gain/ref:.0f} %")
+        print(f"   de surface. Le masque exclut donc une part importante du")
+        print(f"   visage par simple luminance — phototype fonce, ou sous-exposition.")
+        print(f"   Re-exporter avec roma_v2_export.py --seuil-peau 25.")
+
     step = field.step
     plafond = pct(nf / (step * step), nf)
     print(f"\nmasque facial            {nf:>10d} pixels")
@@ -133,6 +161,7 @@ def main():
 
     couv_union = np.zeros((h, w), bool)
     dispo_union = np.zeros((h, w), bool)
+    par_paire = {}
     raisons = np.zeros((h, w), np.uint8)   # 0 hors masque, 1 sans champ, 2 epi, 3 texture, 4 retenu
 
     for k in field.pairs:
@@ -190,6 +219,7 @@ def main():
 
         couv_union |= retenu
         dispo_union |= dispo
+        par_paire[k] = dispo
         raisons[grille & ~wm & (raisons == 0)] = 1
         raisons[dispo & ~ok_epi & (raisons <= 1)] = 2
         raisons[ok_epi & ~ok_tex & (raisons <= 2)] = 3
@@ -201,6 +231,32 @@ def main():
     print(f"points retenus   {int(couv_union.sum()):10d}  "
           f"{pct(couv_union.sum(), grille.sum()):5.1f} % de la grille  "
           f"({pct(couv_union.sum(), dispo_union.sum()):.0f} % du disponible)")
+
+    # --- qui couvre quoi : chaque joue ne repose que sur UNE paire ----------
+    if len(par_paire) == 2:
+        L, R = par_paire.get("L"), par_paire.get("R")
+        seulL = L & ~R & grille
+        seulR = R & ~L & grille
+        deux = L & R & grille
+        aucune = ~L & ~R & grille
+        print(f"\n--- repartition entre les deux paires stereo ---")
+        for nom, m2 in (("L seule", seulL), ("R seule", seulR),
+                        ("les deux", deux), ("aucune", aucune)):
+            print(f"   {nom:10s} {int(m2.sum()):10d}  {pct(m2.sum(), grille.sum()):5.1f} %"
+                  f" de la grille")
+        print("   Une zone occluse dans une oblique doit etre couverte par")
+        print("   L'AUTRE paire. Si elle apparait en 'aucune', ce n'est plus")
+        print("   une occlusion simple : les deux vues la perdent.")
+        vis2 = (A * 0.4).astype(np.uint8)
+        for m2, c in ((seulL, (90, 200, 90)), (seulR, (200, 150, 70)),
+                      (deux, (240, 240, 240)), (aucune, (60, 60, 220))):
+            vis2[m2] = (0.3 * vis2[m2] + 0.7 * np.array(c)).astype(np.uint8)
+        pth = f"{a.out}_paires.png"
+        cv2.imwrite(pth, cv2.resize(vis2, (w // a.reduire, h // a.reduire),
+                                    interpolation=cv2.INTER_AREA))
+        print(f"\n   {pth}")
+        print("   vert = L seule | orange = R seule | blanc = les deux | "
+              "bleu = AUCUNE")
 
     struct = int((grille & ~dispo_union).sum())
     print(f"\n--- ou agir, par ordre de rendement ---")

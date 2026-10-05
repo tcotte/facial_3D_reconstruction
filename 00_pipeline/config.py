@@ -68,7 +68,7 @@ RANSAC_F_THRESH = 3.0
 RANSAC_E_THRESH = 2.0
 
 # --- Densification / confiance ---------------------------------------------
-EPI_HIGH = 1.0          # residu epipolaire (px) : seuil "mesure"
+EPI_HIGH = 5.0          # residu epipolaire (px) : seuil "mesure"
 EPI_MED = 3.0           # seuil "faiblement contraint"
 TEXTURE_MIN = 5.0       # contraste local minimal
 SKIN_TOP, SKIN_BOTTOM = 0.2, 0.88

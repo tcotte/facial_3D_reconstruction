@@ -81,6 +81,13 @@ def main():
                          "(roma2_<sujet>_<session>_<modalite>.npz). Remplace la "
                          "densification par flot optique.")
     ap.add_argument("--roma-cert", type=float, default=0.05)
+    ap.add_argument("--epi-auto", type=float, default=None,
+                    help="seuil epipolaire exprime en MULTIPLE du plancher "
+                         "mesure sur chaque champ, au lieu d'une valeur en "
+                         "pixels. 2 a 3 est raisonnable. Rend le filtrage "
+                         "comparable entre sujets : un seuil fixe de 1 px vaut "
+                         "5x le plancher sur un sujet et 0,6x sur un autre, "
+                         "ou il coupe au milieu du bruit irreductible.")
     ap.add_argument("--texture-min", type=float, default=5.0,
                     help="seuil de texture locale (etait code en dur a 5.0)")
     ap.add_argument("--roma-fill", action="store_true",
@@ -142,6 +149,16 @@ def main():
                 f_ = champs[pfx]
                 if tag not in f_.pairs:
                     continue
+                seuil = a.epi_max
+                if a.epi_auto:
+                    sol = f_.plancher(tag, cert_min=max(a.roma_cert, 0.5))
+                    if sol:
+                        seuil = a.epi_auto * sol
+                        print(f"      {pfx}/{tag} : plancher {sol:.2f} px "
+                              f"-> seuil {seuil:.2f} px")
+                    else:
+                        print(f"      {pfx}/{tag} : plancher non mesurable, "
+                              f"seuil fixe {seuil} px")
                 # residu epipolaire issu du RIG : independant de l'appariement
                 obx, oby, epi, _ = f_.densify_like(
                     tag, K, *POSE[tag], epi_from="rig", cert_min=a.roma_cert,
@@ -150,7 +167,8 @@ def main():
                 obx = np.load(f"{a.dense_dir}/{a.session}_{pfx}_obx_{tag}.npy")
                 oby = np.load(f"{a.dense_dir}/{a.session}_{pfx}_oby_{tag}.npy")
                 epi = np.load(f"{a.dense_dir}/{a.session}_{pfx}_epi_{tag}.npy")
-            hi = face & (~np.isnan(obx)) & (epi < a.epi_max) & (tex > a.texture_min)
+            seuil_eff = seuil if (pfx in champs) else a.epi_max
+            hi = face & (~np.isnan(obx)) & (epi < seuil_eff) & (tex > a.texture_min)
             ys, xs = np.nonzero(hi)
             p1 = np.column_stack([xs, ys]).astype(np.float32)
             p2 = np.column_stack([obx[ys, xs], oby[ys, xs]]).astype(np.float32)
@@ -159,7 +177,17 @@ def main():
             Z[ys[m], xs[m]] = X[m, 2]
         return Z
 
-    print(f"\nseuils appliques : residu < {a.epi_max} px | texture > {a.texture_min}"
+    if a.epi_auto:
+        print(f"\nseuil epipolaire AUTOMATIQUE : {a.epi_auto} x le plancher de "
+              f"chaque champ")
+        print(f"   Le plancher est le residu de la meilleure F possible sur ce "
+              f"champ :")
+        print(f"   aucun rig ne fait mieux. Un seuil sous le plancher ne filtre "
+              f"plus,")
+        print(f"   il tire au sort. Valeur inscrite dans le fichier de sortie.")
+    seuil_txt = (f"{a.epi_auto} x le plancher de chaque champ" if a.epi_auto
+                 else f"{a.epi_max} px (fixe)")
+    print(f"\nseuils appliques : residu < {seuil_txt} | texture > {a.texture_min}"
           f" | interpolation du champ {'OUI' if a.roma_fill else 'NON'}")
     print(f"   Ces seuils sont INDEPENDANTS de ceux de run_session.py. Pour que le")
     print(f"   nuage fusionne soit comparable a un nuage mono-modalite, il faut les")
@@ -211,27 +239,57 @@ def main():
     # etaient independantes, la moyenne de k mesures serait 1/sqrt(k) fois
     # moins rugueuse. Un rapport proche de 1 signifie des erreurs correlees :
     # la fusion n'apporte alors que de la couverture.
-    from scipy.ndimage import median_filter
-    plein = (nch == len(Zs)) & face
-    if plein.sum() > 5000 and len(Zs) >= 2:
-        def rugosite(M):
-            F = np.where(np.isfinite(M), M, np.nanmedian(M[np.isfinite(M)]))
-            return float(np.std((M - median_filter(F, size=9))[plein]))
-        r_seule = np.median([rugosite(z) for z in Zs])
-        r_fusion = rugosite(Zf)
+    # --- la fusion achete-t-elle de la PRECISION, ou seulement de la couverture ?
+    # On compare la rugosite locale d'une modalite seule a celle de la moyenne.
+    # Si les erreurs etaient independantes, la moyenne de k mesures serait
+    # 1/sqrt(k) fois moins rugueuse. C'est le MEILLEUR cas : des erreurs
+    # correlees font moins bien, jamais mieux.
+    #
+    # La moyenne locale est calculee en ignorant les trous (normalisation par
+    # le nombre de voisins valides) et non en les bouchant : une modalite seule
+    # ayant bien plus de trous que la moyenne, le bouchage creait une fausse
+    # rugosite et faisait tomber le rapport SOUS 1/sqrt(k), ce qui est
+    # impossible. Toutes les cartes sont ensuite evaluees sur le MEME jeu de
+    # pixels.
+    WIN = 9
+    MIN_VOISINS = 0.60
+
+    def local_et_zone(M):
+        v = np.isfinite(M)
+        num = cv2.blur(np.where(v, M, 0.0).astype(np.float64), (WIN, WIN))
+        den = cv2.blur(v.astype(np.float64), (WIN, WIN))
+        loc = num / np.maximum(den, 1e-12)
+        return loc, v & (den > MIN_VOISINS)
+
+    locs, zone = [], (nch >= 1) & face
+    for z in list(Zs) + [Zf]:
+        loc, zo = local_et_zone(z)
+        locs.append(loc)
+        zone &= zo
+    if int(zone.sum()) > 5000 and len(Zs) >= 2:
+        r = [float(np.std((z - l)[zone])) for z, l in zip(list(Zs) + [Zf], locs)]
+        r_seule, r_fusion = float(np.median(r[:-1])), r[-1]
+        rapport = r_fusion / max(r_seule, 1e-30)
         attendu = 1.0 / np.sqrt(len(Zs))
-        print(f"\nreduction de bruit par la fusion, sur {int(plein.sum())} pixels "
-              f"couverts par les {len(Zs)} modalites :")
+        print(f"\nreduction de bruit par la fusion, sur {int(zone.sum())} pixels")
+        print(f"ou les {len(Zs)} modalites et la moyenne ont assez de voisins :")
         print(f"   rugosite d'une modalite seule (mediane) : {r_seule:.3e}")
         print(f"   rugosite de la moyenne                  : {r_fusion:.3e}")
-        print(f"   RAPPORT OBSERVE {r_fusion/max(r_seule,1e-30):.3f}  "
+        print(f"   RAPPORT OBSERVE {rapport:.3f}  "
               f"contre {attendu:.3f} attendu si les erreurs etaient independantes")
-        if r_fusion / max(r_seule, 1e-30) > 0.9:
+        if rapport < attendu * 0.9:
+            print("   -> SOUS l'optimum theorique. Des erreurs independantes")
+            print("      donnent 1/sqrt(k) au mieux : un rapport inferieur signale")
+            print("      un biais de mesure, pas un resultat a publier.")
+        elif rapport > 0.9:
             print("   -> erreurs CORRELEES : la fusion apporte de la couverture")
             print("      et de la redondance de controle, PAS de la precision.")
         else:
-            print("   -> reduction de bruit reelle : a documenter, c'est un")
-            print("      changement par rapport a ce qui avait ete mesure.")
+            print("   -> reduction de bruit reelle, entre l'optimum et l'absence")
+            print("      de gain. A documenter : c'est un changement par rapport")
+            print("      au 1,004 mesure au flot optique.")
+    else:
+        print("\nreduction de bruit : zone commune trop petite pour conclure")
 
     out = a.out or f"fusion_{a.subject}_{a.session}.npz"
     np.savez(out, Z=Zf, Zall=Z, nch=nch, face=face, modalites=noms, focal=f)

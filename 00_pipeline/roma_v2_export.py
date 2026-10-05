@@ -81,7 +81,7 @@ import numpy as np
 # coordonnees ci-dessous doivent rester importables (et testables) sur une
 # machine sans torch, typiquement le poste ou tourne le pipeline.
 
-ANGLES = {"F": "Frontal", "L": "Left  Oblique", "R": "Right Oblique"}
+ANGLES = {"F": "Frontal", "L": "Left Oblique", "R": "Right Oblique"}
 BLANK_SIZE = 251258          # fichier blanc de substitution produit par VISIA
 SKIN_TOP, SKIN_BOTTOM = 0.2, 0.88
 EXPORT_FORMAT = "visia-roma2-field/1"
